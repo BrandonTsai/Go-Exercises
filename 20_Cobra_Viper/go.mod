@@ -6,6 +6,7 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.3.1
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.11.0
+	github.com/thedevsaddam/gojsonq/v2 v2.5.2
 )
 
 require (

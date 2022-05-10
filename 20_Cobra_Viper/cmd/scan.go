@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	gojsonq "github.com/thedevsaddam/gojsonq/v2"
 )
 
 // scanCmd represents the scan command
@@ -30,28 +32,110 @@ var scanCmd = &cobra.Command{
 
 		// Get images list
 		images, _ := listImages()
-
-		// for each image, scan it via trivy fmt.Println(trivy)
-		t := table.NewWriter()
-		t.SetOutputMirror(os.Stdout)
-		t.AppendHeader(table.Row{"Image", "Result"})
-
-		for _, img := range images {
-
-			cmd := "trivy client --remote http://" + trivy["server"] + ":" + trivy["port"] + " " + img + " | grep 'Total'"
-			out, err := exec.Command("bash", "-c", cmd).Output()
-
-			if err != nil {
-				// fmt.Println("Failed to execute command:", cmd)
-				t.AppendRow([]interface{}{img, "Unsupported"})
-			} else {
-				t.AppendRow([]interface{}{img, string(out)})
-			}
-			t.AppendSeparator()
+		if true {
+			getJsonResult(images, trivy["server"], trivy["port"])
+		} else {
+			showBriefResult(images, trivy["server"], trivy["port"])
+			showSortedResult(images, trivy["server"], trivy["port"])
 		}
-		t.Render()
-
 	},
+}
+
+func getJsonResult(images []string, server string, port string) {
+	// for each image, scan it via trivy fmt.Println(trivy)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"Image", "High", "Medium", "Low", "Unknow"})
+
+	for _, img := range images {
+
+		cmd1 := "trivy client --format json --remote http://" + server + ":" + port + " " + img
+		jsondata, err1 := exec.Command("bash", "-c", cmd1).Output()
+
+		if err1 != nil {
+			fmt.Println("Failed to execute command:", cmd1)
+			os.Exit(1)
+		}
+
+		results, _ := gojsonq.New().FromString(string(jsondata)).From("Results.[].Vulnerabilities.[]").FindR("Severity")
+		name, _ := results.String()
+		fmt.Printf("%#v\n", name)
+		//fmt.Printf("%#v\n", results.Get())
+	}
+}
+
+func showSortedResult(images []string, server string, port string) {
+
+	// for each image, scan it via trivy fmt.Println(trivy)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"Image", "High", "Medium", "Low", "Unknow"})
+
+	for _, img := range images {
+
+		// cmd := "trivy client --remote http://" + trivy["server"] + ":" + trivy["port"] + " " + img + " | grep 'Total'"
+		// out, err := exec.Command("bash", "-c", cmd).Output()
+		cmd1 := "trivy client --format json --remote http://" + server + ":" + port + " " + img
+		parseResultCmd := cmd1 + " | jq -r \".Results[]\""
+		_, err1 := exec.Command("bash", "-c", parseResultCmd).Output()
+
+		if err1 != nil {
+			fmt.Println("Failed to execute command:", cmd1)
+			t.AppendRow([]interface{}{img, -1, -1, -1, -1, "Unsupported"})
+			continue
+		}
+
+		cmd2 := cmd1 + " | jq -r \".Results[].Vulnerabilities[].Severity\""
+		out2, err2 := exec.Command("bash", "-c", cmd2).Output()
+		if err2 != nil {
+			fmt.Println("Failed to parse result of command:", string(cmd1))
+			t.AppendRow([]interface{}{img, 0, 0, 0, 0})
+		} else {
+			splitFn := func(c rune) bool {
+				return c == '\n'
+			}
+			severity := strings.FieldsFunc(string(out2), splitFn)
+			//fmt.Println(img, ":", severity)
+			vulCount := CountOccurence(severity)
+			t.AppendRow([]interface{}{img, vulCount["HIGH"], vulCount["MEDIUM"], vulCount["LOW"], vulCount["UNKNOWN"]})
+
+		}
+
+		t.AppendSeparator()
+	}
+	t.Render()
+
+}
+
+func CountOccurence(apps []string) map[string]int {
+	dict := make(map[string]int)
+	for _, v := range apps {
+		dict[v]++
+	}
+	return dict
+}
+
+func showBriefResult(images []string, server string, port string) {
+	// for each image, scan it via trivy fmt.Println(trivy)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"Image", "Result"})
+
+	for _, img := range images {
+
+		cmd := "trivy client --remote http://" + server + ":" + port + " " + img + " | grep 'Total'"
+		out, err := exec.Command("bash", "-c", cmd).Output()
+
+		if err != nil {
+			//fmt.Println("Failed to execute command:", cmd)
+			t.AppendRow([]interface{}{img, "Unsupported"})
+		} else {
+			t.AppendRow([]interface{}{img, string(out)})
+		}
+		t.AppendSeparator()
+	}
+	t.Render()
+
 }
 
 func init() {
