@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -15,6 +16,17 @@ import (
 	"github.com/spf13/viper"
 	gojsonq "github.com/thedevsaddam/gojsonq/v2"
 )
+
+type vulResult struct {
+	image   string
+	high    int
+	med     int
+	low     int
+	unknow  int
+	support bool
+}
+
+// type vulResultList []vulResult
 
 // scanCmd represents the scan command
 var scanCmd = &cobra.Command{
@@ -67,10 +79,8 @@ func getJsonResult(images []string, server string, port string) {
 func showSortedResult(images []string, server string, port string) {
 
 	// for each image, scan it via trivy fmt.Println(trivy)
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"Image", "High", "Medium", "Low", "Unknow"})
 
+	imgVulResults := []vulResult{}
 	for _, img := range images {
 
 		// cmd := "trivy client --remote http://" + trivy["server"] + ":" + trivy["port"] + " " + img + " | grep 'Total'"
@@ -81,7 +91,8 @@ func showSortedResult(images []string, server string, port string) {
 
 		if err1 != nil {
 			fmt.Println("Failed to execute command:", cmd1)
-			t.AppendRow([]interface{}{img, -1, -1, -1, -1, "Unsupported"})
+			//t.AppendRow([]interface{}{img, -1, -1, -1, -1, "Unsupported"})
+			imgVulResults = append(imgVulResults, vulResult{img, -1, -1, -1, -1, false})
 			continue
 		}
 
@@ -89,25 +100,44 @@ func showSortedResult(images []string, server string, port string) {
 		out2, err2 := exec.Command("bash", "-c", cmd2).Output()
 		if err2 != nil {
 			fmt.Println("Failed to parse result of command:", string(cmd1))
-			t.AppendRow([]interface{}{img, 0, 0, 0, 0})
+			//t.AppendRow([]interface{}{img, 0, 0, 0, 0})
+			imgVulResults = append(imgVulResults, vulResult{img, 0, 0, 0, 0, true})
 		} else {
 			splitFn := func(c rune) bool {
 				return c == '\n'
 			}
 			severity := strings.FieldsFunc(string(out2), splitFn)
 			//fmt.Println(img, ":", severity)
-			vulCount := CountOccurence(severity)
-			t.AppendRow([]interface{}{img, vulCount["HIGH"], vulCount["MEDIUM"], vulCount["LOW"], vulCount["UNKNOWN"]})
-
+			vulCount := countOccurence(severity)
+			//t.AppendRow([]interface{}{img, vulCount["HIGH"], vulCount["MEDIUM"], vulCount["LOW"], vulCount["UNKNOWN"]})
+			imgVulResults = append(imgVulResults, vulResult{img, vulCount["HIGH"], vulCount["MEDIUM"], vulCount["LOW"], vulCount["UNKNOWN"], true})
 		}
 
+		// t.AppendSeparator()
+	}
+
+	sort.Slice(imgVulResults, func(i, j int) bool {
+		return imgVulResults[i].high < imgVulResults[j].high
+	})
+
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"Image", "High", "Medium", "Low", "Unknow"})
+	for _, r := range imgVulResults {
+		// fmt.Println(value.image, value.h, value.m, value.l)
+		if r.support {
+			t.AppendRow([]interface{}{r.image, r.high, r.med, r.low, r.unknow, ""})
+		} else {
+			t.AppendRow([]interface{}{r.image, r.high, r.med, r.low, r.unknow, "Unsupported"})
+		}
 		t.AppendSeparator()
+
 	}
 	t.Render()
 
 }
 
-func CountOccurence(apps []string) map[string]int {
+func countOccurence(apps []string) map[string]int {
 	dict := make(map[string]int)
 	for _, v := range apps {
 		dict[v]++
