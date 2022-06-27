@@ -44,7 +44,7 @@ var scanCmd = &cobra.Command{
 
 		// Get images list
 		images, _ := listImages()
-		if true {
+		if false {
 			getJsonResult(images, trivy["server"], trivy["port"])
 		} else {
 			showBriefResult(images, trivy["server"], trivy["port"])
@@ -116,9 +116,15 @@ func showSortedResult(images []string, server string, port string) {
 		// t.AppendSeparator()
 	}
 
-	sort.Slice(imgVulResults, func(i, j int) bool {
-		return imgVulResults[i].high < imgVulResults[j].high
-	})
+	if descend {
+		sort.Slice(imgVulResults, func(i, j int) bool {
+			return imgVulResults[i].high < imgVulResults[j].high
+		})
+	} else {
+		sort.Slice(imgVulResults, func(i, j int) bool {
+			return imgVulResults[i].high > imgVulResults[j].high
+		})
+	}
 
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
